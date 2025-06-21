@@ -1,0 +1,9 @@
+<app-navigation></app-navigation>
+<nav class="main-nav" *ngIf="isLoggedIn | async as loggedIn">
+  <a routerLink="/public-info" routerLinkActive="active">Public Info</a>
+  <a routerLink="/ai-symptom" routerLinkActive="active">AI Symptom</a>
+  <a *ngIf="loggedIn && isAdmin" routerLink="/admin-dashboard" routerLinkActive="active">Admin Dashboard</a>
+  <a routerLink="/wearable-data" routerLinkActive="active">Wearable Data</a>
+  <button *ngIf="loggedIn" (click)="logout()" class="logout-btn">Logout</button>
+</nav>
+<router-outlet></router-outlet> 
