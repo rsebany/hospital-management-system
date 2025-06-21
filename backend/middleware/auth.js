@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { getCache } = require('../config/redis');
+const { getCache, setCache } = require('../config/redis');
 const { auditLog, securityLog } = require('../utils/logger');
 const User = require('../models/User');
 
@@ -11,12 +11,17 @@ const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
+    console.log('🔍 AuthMiddleware - JWT_SECRET present:', !!process.env.JWT_SECRET);
+    console.log('🔍 AuthMiddleware - JWT_SECRET value:', process.env.JWT_SECRET ? process.env.JWT_SECRET.substring(0, 10) + '...' : 'undefined');
+
     if (!token) {
       return res.status(401).json({
         error: 'Access denied',
         message: 'No token provided'
       });
     }
+
+    console.log('🔍 AuthMiddleware - Token received:', token.substring(0, 20) + '...');
 
     // Check if token is blacklisted
     const isBlacklisted = await getCache(`blacklist:${token}`);
@@ -33,14 +38,18 @@ const authenticateToken = async (req, res, next) => {
     }
 
     // Verify token
+    console.log('🔍 AuthMiddleware - Attempting to verify token...');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('🔍 AuthMiddleware - Token verified successfully, userId:', decoded.userId);
     
     // Get user from cache or database
     let user = await getCache(`user:${decoded.userId}`);
     
     if (!user) {
+      console.log('🔍 AuthMiddleware - User not in cache, fetching from database...');
       user = await User.findById(decoded.userId).select('-password');
       if (!user) {
+        console.log('🔍 AuthMiddleware - User not found in database');
         return res.status(401).json({
           error: 'Access denied',
           message: 'User not found'
@@ -48,6 +57,9 @@ const authenticateToken = async (req, res, next) => {
       }
       // Cache user for 15 minutes
       await setCache(`user:${decoded.userId}`, user, 900);
+      console.log('🔍 AuthMiddleware - User cached');
+    } else {
+      console.log('🔍 AuthMiddleware - User found in cache');
     }
 
     // Check if user is active
@@ -62,6 +74,8 @@ const authenticateToken = async (req, res, next) => {
     req.user = user;
     req.token = token;
 
+    console.log('🔍 AuthMiddleware - Authentication successful for user:', user.email);
+
     // Audit log
     auditLog('AUTHENTICATION', user._id, 'API_ACCESS', {
       ipAddress: req.ip,
@@ -72,6 +86,10 @@ const authenticateToken = async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error('🔍 AuthMiddleware - Authentication error:', error);
+    console.error('🔍 AuthMiddleware - Error name:', error.name);
+    console.error('🔍 AuthMiddleware - Error message:', error.message);
+    
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         error: 'Access denied',

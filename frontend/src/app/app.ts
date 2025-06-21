@@ -14,17 +14,16 @@ import { Observable } from 'rxjs';
 })
 export class App {
   isLoggedIn: Observable<boolean>;
+  showNavigation = true;
 
   constructor(private auth: AuthService, private router: Router) {
     this.isLoggedIn = this.auth.isLoggedIn();
-  }
-
-  get isAdmin(): boolean {
-    return this.auth.getUserRole() === 'admin';
-  }
-
-  logout() {
-    this.auth.logout();
-    this.router.navigate(['/login']);
+    
+    // Hide navigation on auth pages
+    this.router.events.subscribe(() => {
+      const currentUrl = this.router.url;
+      console.log('Current URL:', currentUrl);
+      this.showNavigation = !currentUrl.includes('/auth/');
+    });
   }
 }

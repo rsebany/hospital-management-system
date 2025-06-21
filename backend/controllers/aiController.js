@@ -798,6 +798,137 @@ class AIController {
       });
     }
   }
+
+  /**
+   * AI-powered analysis of vital records data
+   * POST /api/v1/ai/records/analyze
+   */
+  async analyzeVitalRecords(req, res) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { records, analysisType = 'general' } = req.body;
+
+      if (!records || !Array.isArray(records) || records.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Records array is required and must not be empty'
+        });
+      }
+
+      // Validate each record has required fields
+      const requiredFields = ['timestamp', 'heartRate', 'temperature', 'oxygenLevel'];
+      for (const record of records) {
+        for (const field of requiredFields) {
+          if (record[field] === undefined || record[field] === null) {
+            return res.status(400).json({
+              success: false,
+              error: `Missing required field: ${field}`
+            });
+          }
+        }
+      }
+
+      const result = await aiService.analyzeVitalRecords(records, analysisType);
+
+      logger.auditLog('AI_VITAL_RECORDS_ANALYSIS', req.user?._id || 'anonymous', 'vital_records_analysis', {
+        recordsCount: records.length,
+        analysisType,
+        hasBloodPressure: records.some(r => r.bloodPressure),
+        hasActivityData: records.some(r => r.activityData)
+      });
+
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      logger.error('Error in vital records analysis controller:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to analyze vital records',
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * AI-powered wellness recommendations based on vital data
+   * POST /api/v1/ai/wellness/recommendations
+   */
+  async getWellnessRecommendationsFromVitals(req, res) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { 
+        records, 
+        age, 
+        gender, 
+        activityLevel = 'moderately_active',
+        healthGoals = ['maintain_health'],
+        currentHealth = [],
+        lifestyle = []
+      } = req.body;
+
+      if (!records || !Array.isArray(records) || records.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Records array is required and must not be empty'
+        });
+      }
+
+      if (!age || !gender) {
+        return res.status(400).json({
+          success: false,
+          error: 'Age and gender are required'
+        });
+      }
+
+      const result = await aiService.getWellnessRecommendationsFromVitals({
+        records,
+        age,
+        gender,
+        activityLevel,
+        healthGoals,
+        currentHealth,
+        lifestyle
+      });
+
+      logger.auditLog('AI_WELLNESS_RECOMMENDATIONS', req.user?._id || 'anonymous', 'wellness_recommendations', {
+        recordsCount: records.length,
+        age,
+        gender,
+        activityLevel,
+        healthGoalsCount: healthGoals.length
+      });
+
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      logger.error('Error in wellness recommendations controller:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to generate wellness recommendations',
+        message: error.message
+      });
+    }
+  }
 }
 
 module.exports = new AIController(); 

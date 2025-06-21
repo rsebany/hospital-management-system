@@ -331,8 +331,11 @@ const seedPatients = async () => {
       },
       profile: {
         patientId: 'P000001',
-        bloodType: 'O+',
-        allergies: ['Penicillin'],
+        bloodType: 'A+',
+        allergies: [
+          { allergen: 'Penicillin', severity: 'severe', reaction: 'Anaphylaxis' },
+          { allergen: 'Latex', severity: 'moderate', reaction: 'Skin rash' }
+        ],
         insuranceInfo: {
           provider: 'Blue Cross Blue Shield',
           policyNumber: 'BCBS123456',
@@ -366,12 +369,14 @@ const seedPatients = async () => {
       },
       profile: {
         patientId: 'P000002',
-        bloodType: 'A+',
-        allergies: [],
+        bloodType: 'O+',
+        allergies: [
+          { allergen: 'Aspirin', severity: 'mild', reaction: 'Stomach upset' }
+        ],
         insuranceInfo: {
           provider: 'Aetna',
           policyNumber: 'AETNA789012',
-          expiryDate: '2025-06-30'
+          expiryDate: '2025-08-15'
         }
       },
       isEmailVerified: true,
@@ -402,7 +407,10 @@ const seedPatients = async () => {
       profile: {
         patientId: 'P000003',
         bloodType: 'B+',
-        allergies: ['Peanuts', 'Shellfish'],
+        allergies: [
+          { allergen: 'Peanuts', severity: 'severe', reaction: 'Anaphylaxis' },
+          { allergen: 'Shellfish', severity: 'moderate', reaction: 'Hives and swelling' }
+        ],
         insuranceInfo: {
           provider: 'Cigna',
           policyNumber: 'CIGNA345678',

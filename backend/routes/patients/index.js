@@ -297,13 +297,56 @@ router.get('/billing', authenticateToken, authorizePatient, patientController.ge
  *       200:
  *         description: Notifications retrieved successfully
  */
-router.get('/notifications', authenticateToken, authorizePatient, (req, res) => {
-  // TODO: Implement notifications endpoint
-  res.status(501).json({
-    error: 'Not implemented',
-    message: 'Notifications endpoint will be implemented soon'
-  });
-});
+router.get('/notifications', authenticateToken, authorizePatient, patientController.getNotifications);
+
+/**
+ * @swagger
+ * /api/v1/patients/notifications:
+ *   post:
+ *     summary: Create patient notification (for smart clothing alerts)
+ *     tags: [Patients]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *               - message
+ *               - severity
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 description: Type of notification (e.g., smart_clothing_critical)
+ *               message:
+ *                 type: string
+ *                 description: Notification message
+ *               vitalData:
+ *                 type: object
+ *                 description: Vital signs data from smart clothing
+ *               timestamp:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the alert was generated
+ *               severity:
+ *                 type: string
+ *                 enum: [low, medium, high, critical]
+ *                 description: Alert severity level
+ *               actionRequired:
+ *                 type: boolean
+ *                 description: Whether immediate action is required
+ *     responses:
+ *       201:
+ *         description: Notification created successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/notifications', authenticateToken, authorizePatient, patientController.createNotification);
 
 /**
  * @swagger
@@ -323,12 +366,6 @@ router.get('/notifications', authenticateToken, authorizePatient, (req, res) => 
  *       200:
  *         description: Notification marked as read
  */
-router.post('/notifications/:id/read', authenticateToken, authorizePatient, (req, res) => {
-  // TODO: Implement mark notification as read
-  res.status(501).json({
-    error: 'Not implemented',
-    message: 'Mark notification as read will be implemented soon'
-  });
-});
+router.post('/notifications/:id/read', authenticateToken, authorizePatient, patientController.markNotificationAsRead);
 
 module.exports = router; 

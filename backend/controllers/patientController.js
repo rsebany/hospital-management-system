@@ -773,6 +773,336 @@ const getBilling = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/v1/patients/notifications:
+ *   get:
+ *     summary: Get patient notifications
+ *     tags: [Patients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Number of notifications to return
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number
+ *       - in: query
+ *         name: severity
+ *         schema:
+ *           type: string
+ *         description: Filter by severity level
+ *       - in: query
+ *         name: isRead
+ *         schema:
+ *           type: boolean
+ *         description: Filter by read status
+ *     responses:
+ *       200:
+ *         description: Notifications retrieved successfully
+ */
+const getNotifications = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { limit = 20, page = 1, severity, isRead } = req.query;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Patient not found'
+      });
+    }
+
+    let notifications = user.notifications || [];
+
+    // Filter by severity if provided
+    if (severity) {
+      notifications = notifications.filter(notification => notification.severity === severity);
+    }
+
+    // Filter by read status if provided
+    if (isRead !== undefined) {
+      const readStatus = isRead === 'true';
+      notifications = notifications.filter(notification => notification.isRead === readStatus);
+    }
+
+    // Sort by creation date (newest first)
+    notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Pagination
+    const skip = (page - 1) * limit;
+    const paginatedNotifications = notifications.slice(skip, skip + parseInt(limit));
+
+    // Count unread notifications
+    const unreadCount = notifications.filter(notification => !notification.isRead).length;
+
+    // Audit log
+    auditLog('NOTIFICATIONS_ACCESS', userId, 'PATIENT_NOTIFICATIONS', {
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      notificationCount: paginatedNotifications.length,
+      unreadCount
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        notifications: paginatedNotifications,
+        summary: {
+          total: notifications.length,
+          unread: unreadCount,
+          read: notifications.length - unreadCount
+        },
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(notifications.length / limit),
+          totalRecords: notifications.length,
+          hasNextPage: page * limit < notifications.length,
+          hasPrevPage: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({
+      error: 'Failed to get notifications',
+      message: 'An error occurred while retrieving notifications'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/v1/patients/notifications:
+ *   post:
+ *     summary: Create patient notification (for smart clothing alerts)
+ *     tags: [Patients]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *               - message
+ *               - severity
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 description: Type of notification (e.g., smart_clothing_critical)
+ *               message:
+ *                 type: string
+ *                 description: Notification message
+ *               vitalData:
+ *                 type: object
+ *                 description: Vital signs data from smart clothing
+ *               timestamp:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the alert was generated
+ *               severity:
+ *                 type: string
+ *                 enum: [low, medium, high, critical]
+ *                 description: Alert severity level
+ *               actionRequired:
+ *                 type: boolean
+ *                 description: Whether immediate action is required
+ *     responses:
+ *       201:
+ *         description: Notification created successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+const createNotification = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { type, message, vitalData, timestamp, severity, actionRequired } = req.body;
+
+    // Validate required fields
+    if (!type || !message || !severity) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Type, message, and severity are required'
+      });
+    }
+
+    // Validate severity level
+    const validSeverities = ['low', 'medium', 'high', 'critical'];
+    if (!validSeverities.includes(severity)) {
+      return res.status(400).json({
+        error: 'Invalid severity level',
+        message: 'Severity must be one of: low, medium, high, critical'
+      });
+    }
+
+    // Create notification object
+    const notification = {
+      patientId: userId,
+      type,
+      message,
+      vitalData: vitalData || null,
+      timestamp: timestamp || new Date().toISOString(),
+      severity,
+      actionRequired: actionRequired || false,
+      isRead: false,
+      createdAt: new Date(),
+      createdBy: userId
+    };
+
+    // For now, we'll store notifications in the user's profile
+    // In a production system, you might want a separate Notification model
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Patient not found'
+      });
+    }
+
+    // Initialize notifications array if it doesn't exist
+    if (!user.notifications) {
+      user.notifications = [];
+    }
+
+    // Add notification to user's notifications array
+    user.notifications.push(notification);
+
+    // Keep only the last 50 notifications to prevent array from growing too large
+    if (user.notifications.length > 50) {
+      user.notifications = user.notifications.slice(-50);
+    }
+
+    await user.save();
+
+    // Clear cache
+    await setCache(`patient:${userId}`, null, 0);
+
+    // Audit log
+    auditLog('NOTIFICATION_CREATED', userId, 'PATIENT_NOTIFICATION', {
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      notificationType: type,
+      severity,
+      actionRequired
+    });
+
+    // For critical alerts, you might want to trigger additional actions
+    if (severity === 'critical' && actionRequired) {
+      // TODO: Implement critical alert actions like:
+      // - Send SMS/email to emergency contacts
+      // - Notify medical staff
+      // - Create emergency appointment
+      console.log('🚨 CRITICAL ALERT: Immediate action required for patient', userId);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Notification created successfully',
+      data: {
+        notification
+      }
+    });
+
+  } catch (error) {
+    console.error('Create notification error:', error);
+    res.status(500).json({
+      error: 'Failed to create notification',
+      message: 'An error occurred while creating the notification'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/v1/patients/notifications/:id/read:
+ *   post:
+ *     summary: Mark notification as read
+ *     tags: [Patients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Notification marked as read
+ *       404:
+ *         description: Notification not found
+ */
+const markNotificationAsRead = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const notificationId = req.params.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Patient not found'
+      });
+    }
+
+    // Find the notification by its index in the array
+    // Since we're storing notifications as an array in the user document,
+    // we'll use the index as the ID for simplicity
+    const notificationIndex = parseInt(notificationId);
+    
+    if (isNaN(notificationIndex) || notificationIndex < 0 || notificationIndex >= user.notifications.length) {
+      return res.status(404).json({
+        error: 'Notification not found',
+        message: 'The specified notification was not found'
+      });
+    }
+
+    // Mark notification as read
+    user.notifications[notificationIndex].isRead = true;
+    user.notifications[notificationIndex].readAt = new Date();
+
+    await user.save();
+
+    // Clear cache
+    await setCache(`patient:${userId}`, null, 0);
+
+    // Audit log
+    auditLog('NOTIFICATION_READ', userId, 'PATIENT_NOTIFICATION', {
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      notificationIndex,
+      notificationType: user.notifications[notificationIndex].type
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Notification marked as read',
+      data: {
+        notification: user.notifications[notificationIndex]
+      }
+    });
+
+  } catch (error) {
+    console.error('Mark notification as read error:', error);
+    res.status(500).json({
+      error: 'Failed to mark notification as read',
+      message: 'An error occurred while marking the notification as read'
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -782,5 +1112,8 @@ module.exports = {
   updateAppointment,
   cancelAppointment,
   getPrescriptions,
-  getBilling
+  getBilling,
+  getNotifications,
+  createNotification,
+  markNotificationAsRead
 }; 

@@ -51,6 +51,25 @@ const emergencyTriageValidation = [
   body('gender').isIn(['male', 'female', 'other']).withMessage('Valid gender is required')
 ];
 
+const vitalRecordsValidation = [
+  body('records').isArray({ min: 1 }).withMessage('Records array is required and must not be empty'),
+  body('records.*.timestamp').isISO8601().withMessage('Valid timestamp is required for each record'),
+  body('records.*.heartRate').isFloat({ min: 0, max: 300 }).withMessage('Valid heart rate is required'),
+  body('records.*.temperature').isFloat({ min: 30, max: 45 }).withMessage('Valid temperature is required'),
+  body('records.*.oxygenLevel').isFloat({ min: 0, max: 100 }).withMessage('Valid oxygen level is required'),
+  body('analysisType').optional().isIn(['general', 'trend', 'alert', 'comprehensive']).withMessage('Invalid analysis type')
+];
+
+const wellnessRecommendationsFromVitalsValidation = [
+  body('records').isArray({ min: 1 }).withMessage('Records array is required and must not be empty'),
+  body('age').isInt({ min: 0, max: 150 }).withMessage('Valid age is required'),
+  body('gender').isIn(['male', 'female', 'other']).withMessage('Valid gender is required'),
+  body('activityLevel').optional().isIn(['sedentary', 'lightly_active', 'moderately_active', 'very_active', 'extremely_active']).withMessage('Invalid activity level'),
+  body('healthGoals').optional().isArray().withMessage('Health goals must be an array'),
+  body('currentHealth').optional().isArray().withMessage('Current health must be an array'),
+  body('lifestyle').optional().isArray().withMessage('Lifestyle must be an array')
+];
+
 // Health check endpoint (no authentication required)
 router.get('/health', aiController.healthCheck);
 
@@ -81,6 +100,14 @@ router.post('/appointments/assist',
 // Medical records analysis
 router.post('/records/analyze', 
   authenticateToken, 
+  vitalRecordsValidation, 
+  validateRequest, 
+  aiController.analyzeVitalRecords
+);
+
+// Medical records analysis (legacy endpoint)
+router.post('/medical-records/analyze', 
+  authenticateToken, 
   recordAnalysisValidation, 
   validateRequest, 
   aiController.analyzeMedicalRecords
@@ -102,12 +129,20 @@ router.post('/medications/info',
   aiController.getMedicationInfo
 );
 
-// Wellness recommendations
+// Wellness recommendations (general)
 router.post('/wellness/recommendations', 
   authenticateToken, 
   wellnessRecommendationsValidation, 
   validateRequest, 
   aiController.getWellnessRecommendations
+);
+
+// Wellness recommendations from vital data
+router.post('/wellness/recommendations/vitals', 
+  authenticateToken, 
+  wellnessRecommendationsFromVitalsValidation, 
+  validateRequest, 
+  aiController.getWellnessRecommendationsFromVitals
 );
 
 // Emergency triage

@@ -289,7 +289,52 @@ const userSchema = new mongoose.Schema({
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
+  },
+  
+  // Notifications for patients
+  notifications: [{
+    type: {
+      type: String,
+      required: true
+    },
+    message: {
+      type: String,
+      required: true
+    },
+    vitalData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    severity: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'critical'],
+      required: true
+    },
+    actionRequired: {
+      type: Boolean,
+      default: false
+    },
+    isRead: {
+      type: Boolean,
+      default: false
+    },
+    readAt: {
+      type: Date,
+      default: null
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

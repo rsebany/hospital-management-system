@@ -61,6 +61,21 @@ class BlockchainService {
           }
         ];
         
+        // Validate Ethereum addresses in development mode
+        if (process.env.NODE_ENV === 'development') {
+          // Check if addresses are valid Ethereum addresses (42 characters starting with 0x)
+          const isValidAddress = (address) => {
+            return address && address.length === 42 && address.startsWith('0x');
+          };
+          
+          if (!isValidAddress(process.env.BLOCKCHAIN_CONTRACT_ADDRESS) || 
+              !isValidAddress(process.env.BLOCKCHAIN_ADMIN_ADDRESS)) {
+            logger.warn('⚠️ Invalid Ethereum addresses in development mode, disabling blockchain service');
+            this.isEnabled = false;
+            return;
+          }
+        }
+        
         // Initialize contract
         this.contract = new this.web3.eth.Contract(
           this.contractABI,
@@ -74,7 +89,12 @@ class BlockchainService {
         logger.info('Blockchain service initialized successfully');
       } catch (error) {
         logger.error('Failed to initialize blockchain service:', error);
-        this.isEnabled = false;
+        if (process.env.NODE_ENV === 'development') {
+          logger.warn('⚠️ Continuing in development mode without blockchain service');
+          this.isEnabled = false;
+        } else {
+          throw error;
+        }
       }
     } else {
       logger.info('Blockchain service disabled - missing environment variables');

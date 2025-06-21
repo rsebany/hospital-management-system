@@ -39,13 +39,30 @@ class AIService {
         
         Reported Symptoms: ${symptoms}
         
-        Please provide:
-        1. Possible conditions (common and serious)
-        2. Red flags that require immediate medical attention
-        3. Recommended next steps
-        4. General advice for symptom management
+        Please provide a structured analysis in the following JSON format:
+        {
+          "riskLevel": "High|Medium|Low",
+          "urgentCare": true/false,
+          "emergencyCare": true/false,
+          "possibleConditions": [
+            {
+              "condition": "condition name",
+              "severity": "Severe|Moderate|Mild",
+              "probability": 0.0-1.0,
+              "symptoms": ["symptom1", "symptom2"],
+              "recommendations": ["recommendation1", "recommendation2"]
+            }
+          ],
+          "followUp": "detailed follow-up instructions",
+          "disclaimer": "medical disclaimer"
+        }
         
-        IMPORTANT: This is for informational purposes only and should not replace professional medical evaluation.
+        IMPORTANT: 
+        - Return ONLY valid JSON, no additional text
+        - Set emergencyCare=true for life-threatening conditions
+        - Set urgentCare=true for conditions requiring immediate attention
+        - Probability should be between 0.0 and 1.0
+        - This is for informational purposes only and should not replace professional medical evaluation
       `;
 
       const response = await this.openai.chat.completions.create({
@@ -54,14 +71,39 @@ class AIService {
           { role: "system", content: this.systemPrompts.symptomAnalysis },
           { role: "user", content: prompt }
         ],
-        max_tokens: 1000,
+        max_tokens: 1500,
         temperature: 0.3
       });
 
+      let analysisData;
+      try {
+        // Try to parse the JSON response
+        const content = response.choices[0].message.content;
+        analysisData = JSON.parse(content);
+      } catch (parseError) {
+        logger.error('Failed to parse AI response as JSON:', parseError);
+        // Fallback to simple analysis if JSON parsing fails
+        analysisData = {
+          riskLevel: "Medium",
+          urgentCare: false,
+          emergencyCare: false,
+          possibleConditions: [{
+            condition: "General Assessment",
+            severity: "Moderate",
+            probability: 0.5,
+            symptoms: ["Symptoms require professional evaluation"],
+            recommendations: ["Consult with a healthcare provider for proper diagnosis"]
+          }],
+          followUp: "Please consult with a healthcare provider for proper medical evaluation.",
+          disclaimer: "This analysis is for informational purposes only and should not replace professional medical evaluation."
+        };
+      }
+
       return {
-        analysis: response.choices[0].message.content,
-        timestamp: new Date().toISOString(),
-        disclaimer: "This analysis is for informational purposes only and should not replace professional medical evaluation."
+        analysis: {
+          ...analysisData,
+          timestamp: new Date().toISOString()
+        }
       };
     } catch (error) {
       logger.error('Error in symptom analysis:', error);
@@ -488,6 +530,147 @@ class AIService {
     } catch (error) {
       logger.error('Error in AI patient flow prediction:', error);
       throw new Error('Failed to predict patient flow');
+    }
+  }
+
+  /**
+   * Analyze vital records data for real-time monitoring
+   */
+  async analyzeVitalRecords(records, analysisType = 'general') {
+    try {
+      const prompt = `
+        Analysis Type: ${analysisType}
+        Vital Records Data: ${JSON.stringify(records)}
+        
+        Please analyze the vital signs data and provide:
+        1. Overall health status assessment
+        2. Any concerning trends or patterns
+        3. Risk level assessment (low/medium/high)
+        4. Specific alerts or warnings
+        5. Recommendations for monitoring or action
+        6. Next check-in timing
+        
+        Focus on:
+        - Heart rate trends and abnormalities
+        - Temperature patterns (fever detection)
+        - Oxygen saturation levels
+        - Blood pressure readings (if available)
+        - Activity data patterns (if available)
+        
+        Return the analysis in JSON format with the following structure:
+        {
+          "status": "normal|warning|critical",
+          "alerts": ["array of alert messages"],
+          "recommendations": ["array of recommendations"],
+          "riskLevel": "low|medium|high",
+          "nextCheckIn": "recommended timing",
+          "emergencyContact": boolean
+        }
+      `;
+
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a medical AI assistant specializing in vital signs analysis. Provide accurate assessments and actionable recommendations." },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 800,
+        temperature: 0.2
+      });
+
+      const content = response.choices[0].message.content;
+      
+      // Try to parse JSON response, fallback to structured text if needed
+      try {
+        return JSON.parse(content);
+      } catch (parseError) {
+        // Fallback: create structured response from text
+        return {
+          status: content.includes('critical') ? 'critical' : content.includes('warning') ? 'warning' : 'normal',
+          alerts: [content],
+          recommendations: ['Please consult with a healthcare provider for detailed analysis'],
+          riskLevel: content.includes('high') ? 'high' : content.includes('medium') ? 'medium' : 'low',
+          nextCheckIn: 'within 24 hours',
+          emergencyContact: content.includes('critical') || content.includes('emergency')
+        };
+      }
+    } catch (error) {
+      logger.error('Error in vital records analysis:', error);
+      throw new Error('Failed to analyze vital records');
+    }
+  }
+
+  /**
+   * Generate wellness recommendations based on vital data
+   */
+  async getWellnessRecommendationsFromVitals(data) {
+    try {
+      const { records, age, gender, activityLevel, healthGoals, currentHealth, lifestyle } = data;
+      
+      const prompt = `
+        Patient Profile:
+        - Age: ${age}
+        - Gender: ${gender}
+        - Activity Level: ${activityLevel}
+        - Health Goals: ${healthGoals.join(', ')}
+        - Current Health: ${currentHealth.join(', ')}
+        - Lifestyle: ${lifestyle.join(', ')}
+        
+        Vital Records Data: ${JSON.stringify(records)}
+        
+        Please generate personalized wellness recommendations based on the vital data and patient profile.
+        
+        Return recommendations in JSON format with the following structure:
+        [
+          {
+            "category": "string (e.g., exercise, nutrition, sleep, stress)",
+            "title": "string",
+            "description": "string",
+            "priority": "low|medium|high",
+            "actions": ["array of specific actions"]
+          }
+        ]
+        
+        Focus on:
+        - Heart rate optimization
+        - Temperature management
+        - Oxygen level improvement
+        - Blood pressure control (if data available)
+        - Activity level recommendations
+        - Sleep quality suggestions
+        - Stress management techniques
+      `;
+
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a wellness AI assistant providing personalized health recommendations based on vital signs data." },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 1000,
+        temperature: 0.3
+      });
+
+      const content = response.choices[0].message.content;
+      
+      // Try to parse JSON response, fallback to structured recommendations if needed
+      try {
+        return JSON.parse(content);
+      } catch (parseError) {
+        // Fallback: create structured recommendations from text
+        return [
+          {
+            category: "general",
+            title: "Wellness Recommendations",
+            description: content,
+            priority: "medium",
+            actions: ["Consult with healthcare provider", "Monitor vital signs regularly"]
+          }
+        ];
+      }
+    } catch (error) {
+      logger.error('Error in wellness recommendations generation:', error);
+      throw new Error('Failed to generate wellness recommendations');
     }
   }
 }
